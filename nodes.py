@@ -45,6 +45,7 @@ class DavchaSpectralNoiseEQ(io.ComfyNode):
             inputs=[
                 io.Noise.Input("base_noise", tooltip="Standard Uniform Noise recommended."),
                 io.Sigmas.Input("spectrum", tooltip="1D tensor EQ curve. 1.0 = Unity, 0.0 = Mute, 2.0+ = Boost"),
+                io.Boolean.Input("normalize", default=True, tooltip="Normalize the output noise to have a standard deviation of 1.0. This is recommended for most use cases."),
             ],
             outputs=[
                 io.Noise.Output(),
@@ -52,8 +53,8 @@ class DavchaSpectralNoiseEQ(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, base_noise, spectrum) -> io.NodeOutput:
-        eq_noise = SpectralNoiseEQ(base_noise, spectrum)
+    def execute(cls, base_noise, spectrum, normalize) -> io.NodeOutput:
+        eq_noise = SpectralNoiseEQ(base_noise, spectrum, normalize)
         return io.NodeOutput(eq_noise)
         
 class DavchaScheduledSampler(io.ComfyNode):
