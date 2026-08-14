@@ -47,7 +47,7 @@ class SpectralNoise:
         fft_x = torch.fft.fftshift(torch.fft.fft2(x_f, dim=(-2, -1)), dim=(-2, -1))
         fft_y = torch.fft.fftshift(torch.fft.fft2(y_f, dim=(-2, -1)), dim=(-2, -1))
         
-        filter_2d = self.create_radial_filter(self.spectrum, H, W, device)
+        filter_2d = create_radial_filter(self.spectrum, H, W, device)
         view_shape = [1] * (x.ndim - 2) + [H, W]
         mask_nd = filter_2d.view(*view_shape)
         mask_nd = torch.clamp(mask_nd, 0.0, 1.0)
@@ -83,12 +83,13 @@ class SpectralNoise:
             return self._process_single_tensor(x, y)
         
 class SpectralNoiseEQ:
-    def __init__(self, base_noise, spectrum_tensor):
+    def __init__(self, base_noise, spectrum_tensor, normalize):
         self.base_noise = base_noise
         self.spectrum = spectrum_tensor
+        self.normalize = normalize
         self.seed = 0
 
-    def _process_single_tensor(self, x, normalize):
+    def _process_single_tensor(self, x):
         device = x.device
         dtype = x.dtype  
         *_, H, W = x.shape
@@ -99,7 +100,7 @@ class SpectralNoiseEQ:
         fft_x = torch.fft.fftshift(torch.fft.fft2(x_f, dim=(-2, -1)), dim=(-2, -1))
         
         # 2. Get our EQ Mask (No longer bounded to 0-1!)
-        filter_2d = self.create_radial_filter(self.spectrum, H, W, device)
+        filter_2d = create_radial_filter(self.spectrum, H, W, device)
         view_shape = [1] * (x.ndim - 2) + [H, W]
         eq_mask = filter_2d.view(*view_shape)
         
@@ -113,21 +114,21 @@ class SpectralNoiseEQ:
         # (This ensures the overall volume of the noise stays acceptable for the scheduler,
         # but the *distribution* of that volume is dictated by your EQ curve).
         std = shaped.std()
-        if std > 0 and normalize:
+        if std > 0 and self.normalize:
             shaped = (shaped - shaped.mean()) / std
         else:
             shaped = shaped - shaped.mean()
             
         return shaped.to(dtype)
 
-    def generate_noise(self, input_latent, normalize):
+    def generate_noise(self, input_latent):
         x = self.base_noise.generate_noise(input_latent)
         
         if getattr(x, 'is_nested', False):
             # Safe injection for Minimax H3
             for xi in x.unbind():
-                xi.copy_(self._process_single_tensor(xi, normalize))
+                xi.copy_(self._process_single_tensor(xi))
             return x
         else:
             # Standard for Flux / SDXL
-            return self._process_single_tensor(x, normalize)
+            return self._process_single_tensor(x)
