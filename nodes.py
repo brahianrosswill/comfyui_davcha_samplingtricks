@@ -1,3 +1,5 @@
+import torch
+
 from comfy_api.latest import io
 from comfy.samplers import KSAMPLER
 from .noise import SpectralNoise, SpectralNoiseEQ, MaskedNoise
@@ -21,7 +23,7 @@ class DavchaSpectralNoiseBlend(io.ComfyNode):
             inputs=[
                 io.Noise.Input("noise_a"),
                 io.Noise.Input("noise_b"),
-                io.Sigmas.Input("spectrum", tooltip="1D tensor controlling frequency blending. 0.0 = Noise B, 1.0 = Noise A"),
+                io.MultiType.Input("spectrum", types=[io.Sigmas, io.Float], tooltip="1D tensor controlling frequency blending. 0.0 = Noise B, 1.0 = Noise A"),
             ],
             outputs=[
                 io.Noise.Output(),
@@ -30,6 +32,12 @@ class DavchaSpectralNoiseBlend(io.ComfyNode):
 
     @classmethod
     def execute(cls, noise_a, noise_b, spectrum) -> io.NodeOutput:
+        if isinstance(spectrum, float):
+            # Convert single float to a 1D tensor for compatibility
+            spectrum = torch.tensor([spectrum], dtype=torch.float32)
+        elif isinstance(spectrum, list):
+            # Convert list of floats to a 1D tensor for compatibility
+            spectrum = torch.tensor(spectrum, dtype=torch.float32)
         blended_noise = SpectralNoise(noise_a, noise_b, spectrum)
         return io.NodeOutput(blended_noise)
     
@@ -47,7 +55,7 @@ class DavchaSpectralNoiseEQ(io.ComfyNode):
             category="davcha/noise/spectral",
             inputs=[
                 io.Noise.Input("base_noise", tooltip="Standard Uniform Noise recommended."),
-                io.Sigmas.Input("spectrum", tooltip="1D tensor EQ curve. 1.0 = Unity, 0.0 = Mute, 2.0+ = Boost"),
+                io.MultiType.Input("spectrum", types=[io.Sigmas, io.Float], tooltip="1D tensor EQ curve. 1.0 = Unity, 0.0 = Mute, 2.0+ = Boost"),
                 io.Boolean.Input("normalize", default=True, tooltip="Normalize the output noise to have a standard deviation of 1.0. This is recommended for most use cases."),
             ],
             outputs=[
@@ -57,6 +65,12 @@ class DavchaSpectralNoiseEQ(io.ComfyNode):
 
     @classmethod
     def execute(cls, base_noise, spectrum, normalize) -> io.NodeOutput:
+        if isinstance(spectrum, float):
+            # Convert single float to a 1D tensor for compatibility
+            spectrum = torch.tensor([spectrum], dtype=torch.float32)
+        elif isinstance(spectrum, list):
+            # Convert list of floats to a 1D tensor for compatibility
+            spectrum = torch.tensor(spectrum, dtype=torch.float32)
         eq_noise = SpectralNoiseEQ(base_noise, spectrum, normalize)
         return io.NodeOutput(eq_noise)
 
