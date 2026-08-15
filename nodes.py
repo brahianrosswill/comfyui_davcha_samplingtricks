@@ -1,8 +1,11 @@
 from comfy_api.latest import io
 from comfy.samplers import KSAMPLER
-from .spectral_noise import SpectralNoise, SpectralNoiseEQ
-from .scheduled_sampler import sampler_function
+from .noise import SpectralNoise, SpectralNoiseEQ, MaskedNoise
+from .sampler import sampler_function
 
+# ------------------------------------------------------------
+# Noise nodes
+# ------------------------------------------------------------
 class DavchaSpectralNoiseBlend(io.ComfyNode):
     """
     Blends a Fractal (A) and Uniform (B) noise together using a frequency-based mask.
@@ -56,7 +59,37 @@ class DavchaSpectralNoiseEQ(io.ComfyNode):
     def execute(cls, base_noise, spectrum, normalize) -> io.NodeOutput:
         eq_noise = SpectralNoiseEQ(base_noise, spectrum, normalize)
         return io.NodeOutput(eq_noise)
-        
+
+class DavchaMaskedNoise(io.ComfyNode):
+    """
+    Spatially blends two noises together using an image mask.
+    Black areas (0.0) use the Base Noise. White areas (1.0) use the Masked Noise.
+    """
+    
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="DavchaMaskedNoise",
+            display_name="Masked Noise Blend",
+            category="davcha/noise/spatial",
+            inputs=[
+                io.Noise.Input("base_noise", tooltip="Noise used where the mask is BLACK (0.0)"),
+                io.Noise.Input("masked_noise", tooltip="Noise used where the mask is WHITE (1.0)"),
+                io.Mask.Input("mask", tooltip="Spatial Mask tensor"),
+            ],
+            outputs=[
+                io.Noise.Output(),
+            ]
+        )
+
+    @classmethod
+    def execute(cls, base_noise, masked_noise, mask) -> io.NodeOutput:
+        blended_noise = MaskedNoise(base_noise, masked_noise, mask)
+        return io.NodeOutput(blended_noise)
+
+# ------------------------------------------------------------
+# Sampling nodes
+# ------------------------------------------------------------
 class DavchaScheduledSampler(io.ComfyNode):
     @classmethod
     def define_schema(cls):

@@ -132,3 +132,87 @@ class SpectralNoiseEQ:
         else:
             # Standard for Flux / SDXL
             return self._process_single_tensor(x)
+        
+class MaskedNoise:
+    def __init__(self, base_noise, masked_noise, mask):
+        self.base_noise = base_noise
+        self.masked_noise = masked_noise
+        self.mask = mask
+        
+        # Pass through the seed of the base noise for the samplers
+        self.seed = getattr(base_noise, "seed", getattr(masked_noise, "seed", 0))
+
+    def _process_single_tensor(self, x, y, mask_tensor):
+        device = x.device
+        dtype = x.dtype
+        *_, H, W = x.shape
+        
+        # 1. Prepare the mask tensor
+        m = mask_tensor.clone().to(device, dtype=torch.float32)
+        
+        # ComfyUI masks are usually [H, W] or [B, H, W]. 
+        # We need to make it [B, C, H, W] for the interpolate function.
+        if m.ndim == 2:
+            m = m.unsqueeze(0).unsqueeze(0)
+        elif m.ndim == 3:
+            m = m.unsqueeze(1)
+            
+        # 2. Resize mask to EXACTLY match the latent grid dimensions
+        # (Latents are usually 1/8th the size of the pixel mask)
+        m = torch.nn.functional.interpolate(m, size=(H, W), mode='bilinear', align_corners=False)
+        
+        # 3. Reshape mask dynamically to broadcast against the noise tensor
+        m = m.squeeze(1) # Drop the channel dim, now [B, H, W]
+        
+        # If mask has only 1 batch, but our latent doesn't (or vice versa), 
+        # squeeze it down to just [H, W] so it broadcasts globally.
+        if m.shape[0] == 1 and (x.ndim == 3 or x.shape[0] != 1):
+            m = m.squeeze(0) # Now [H, W]
+            
+        if m.ndim == 2: # [H, W]
+            view_shape = [1] * (x.ndim - 2) + [H, W]
+        elif m.ndim == 3: # [B, H, W]
+            view_shape = [m.shape[0]] + [1] * (x.ndim - 3) + [H, W]
+            
+        m = m.view(*view_shape)
+        m = torch.clamp(m, 0.0, 1.0)
+        
+        # 4. ENERGY-PRESERVING BLEND (Spatial Domain)
+        # Prevents a loss of noise variance at the feathered edges of the mask
+        x_f = x.to(torch.float32)
+        y_f = y.to(torch.float32)
+        
+        blended = (torch.sqrt(1.0 - m) * x_f) + (torch.sqrt(m) * y_f)
+        
+        # 5. Global Normalization
+        std = blended.std()
+        if std > 0:
+            blended = (blended - blended.mean()) / std
+        else:
+            blended = blended - blended.mean()
+            
+        return blended.to(dtype)
+
+    def generate_noise(self, input_latent):
+        x = self.base_noise.generate_noise(input_latent)
+        y = self.masked_noise.generate_noise(input_latent)
+        
+        if getattr(x, 'is_nested', False):
+            # Safe injection for Minimax H3 / Video Models
+            x_unbind = x.unbind()
+            y_unbind = y.unbind()
+            
+            # Try to unpack the mask batch if it matches the video frame count
+            m = self.mask
+            if m.ndim == 3 and m.shape[0] == len(x_unbind):
+                masks = m.unbind(dim=0)
+            else:
+                # Otherwise, apply the same mask to all frames
+                masks = [m] * len(x_unbind)
+                
+            for xi, yi, mi in zip(x_unbind, y_unbind, masks):
+                xi.copy_(self._process_single_tensor(xi, yi, mi))
+            return x
+        else:
+            # Standard execution for Flux / SDXL
+            return self._process_single_tensor(x, y, self.mask)

@@ -1,15 +1,18 @@
 # ComfyUI Davcha Sampling Tricks
 
-**Davcha Sampling Tricks** is an advanced custom node extension for ComfyUI. It provides powerful frequency-domain noise manipulation tools (Spectral Blending & EQ) and a dynamic multi-sampler chaining system. 
+**Davcha Sampling Tricks** is an advanced custom node extension for ComfyUI. It provides powerful frequency-domain noise manipulation tools (Spectral Blending & EQ), spatial masking capabilities, and a dynamic multi-sampler chaining system. 
 
-Whether you want fine-grained control over the initial noise structure for specific frequencies, or you want to swap out sampling algorithms mid-generation, this toolkit gives you the flexibility you need.
+Whether you want fine-grained control over the initial noise structure for specific frequencies, target custom noise to specific spatial regions, or swap out sampling algorithms mid-generation, this toolkit gives you the flexibility you need.
 
 ## 🌟 Key Features
 
 ### 1. Spectral Noise Manipulation (FFT)
 Instead of blending noise purely in the spatial domain, these nodes use Fast Fourier Transforms (FFT) to convert noise into the frequency domain. This allows you to apply radial masks and equalizer curves to low, mid, and high frequencies independently.
 
-### 2. NestedTensor & Next-Gen Model Support
+### 2. Spatial Noise Masking (Energy-Preserving)
+Target specific areas of your image with different noise structures using standard masks. Our spatial blending uses an energy-preserving `sqrt()` algorithm to prevent the "variance dip" that usually causes flat, halo-like artifacts along feathered mask edges.
+
+### 3. NestedTensor & Next-Gen Model Support
 Designed with modern architectures in mind. The noise generation safely handles `NestedTensor` formats (essential for models like **Minimax H3**) by using non-destructive unbinding and exact memory layout preservation, while remaining fully compatible with standard models like **Flux** and **SDXL**.
 
 ---
@@ -34,6 +37,14 @@ Acts as a graphic equalizer for a single noise source. Shape the structural freq
   * `0.0` = Mute (Removes the frequency)
   * `> 1.0` = Boost (Amplifies the frequency)
   * *Note: The node automatically applies a global normalization at the end to ensure the overall noise energy remains acceptable for the diffusion scheduler.*
+
+### 🎭 Masked Noise Blend (`DavchaMaskedNoise`)
+Spatially blends two noises together using an image mask, perfect for inpainting or localized texture control.
+* **Inputs:**
+  * `base_noise`: Noise used where the mask is BLACK (`0.0`).
+  * `masked_noise`: Noise used where the mask is WHITE (`1.0`).
+  * `mask`: Standard ComfyUI mask tensor.
+* **How it works:** The node automatically resizes standard pixel masks (e.g., 1024x1024) to match the internal latent grid (e.g., 128x128). It then blends the two noises using energy-preserving math to keep the noise contrast punchy and seamless, even across soft gradient masks.
 
 ### ⏳ Scheduled Sampler (`DavchaScheduledSampler`)
 Allows you to chain multiple distinct samplers together during a single generation process.

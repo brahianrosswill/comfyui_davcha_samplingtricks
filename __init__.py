@@ -4,9 +4,10 @@ from .nodes import *
 class DavchaSamplingTricksExtension(ComfyExtension):
     async def get_node_list(self) -> list[type[io.ComfyNode]]:
         return [
-            DavchaSpectralNoiseBlend,
+            DavchaSpectralNoiseBlend, 
             DavchaSpectralNoiseEQ,
             DavchaScheduledSampler,
+            DavchaMaskedNoise,
         ]
         
 async def comfy_entrypoint() -> DavchaSamplingTricksExtension:
