@@ -134,11 +134,12 @@ class SpectralNoiseEQ:
             return self._process_single_tensor(x)
         
 class MaskedNoise:
-    def __init__(self, base_noise, masked_noise, mask):
+    def __init__(self, base_noise, masked_noise, mask, normalize):
         self.base_noise = base_noise
         self.masked_noise = masked_noise
         self.mask = mask
-        
+        self.normalize = normalize
+
         # Pass through the seed of the base noise for the samplers
         self.seed = getattr(base_noise, "seed", getattr(masked_noise, "seed", 0))
 
@@ -186,7 +187,7 @@ class MaskedNoise:
         
         # 5. Global Normalization
         std = blended.std()
-        if std > 0:
+        if std > 0 and self.normalize:
             blended = (blended - blended.mean()) / std
         else:
             blended = blended - blended.mean()
@@ -216,3 +217,56 @@ class MaskedNoise:
         else:
             # Standard execution for Flux / SDXL
             return self._process_single_tensor(x, y, self.mask)
+
+class LatentNoiseObject:
+    def __init__(self, latent_dict):
+        # Extract the actual tensor from the ComfyUI latent dictionary
+        self.latent_tensor = latent_dict["samples"]
+        self.seed = 0
+
+    def _process_single(self, target, src):
+        *_, tH, tW = target.shape
+        *_, sH, sW = src.shape
+        
+        # STRICT SIZE ENFORCEMENT
+        # We do not resize latents. Latent interpolation destroys VAE features 
+        # and breaks spatial alignment with masks.
+        if (tH, tW) != (sH, sW):
+            raise ValueError(
+                f"\n[Davcha Latent Noise] Shape Mismatch!\n"
+                f"Your injected LatentNoise is {sW*8}x{sH*8} (Latent {sW}x{sH}), "
+                f"but the generation target is {tW*8}x{tH*8} (Latent {tW}x{tH}).\n"
+                f"Fix: Please pad/crop the source image in pixel space BEFORE generating the noise so it exactly matches your generation size."
+            )
+            
+        return src
+
+    def generate_noise(self, input_latent):
+        target = input_latent["samples"] if isinstance(input_latent, dict) else input_latent
+        src = self.latent_tensor.to(target.device, dtype=target.dtype)
+        
+        # Minimax H3 / NestedTensor Video Safe-Guard
+        if getattr(target, 'is_nested', False):
+            t_unbind = target.unbind()
+            s_unbind = src.unbind() if getattr(src, 'is_nested', False) else [src] * len(t_unbind)
+            
+            processed = [self._process_single(t, s) for t, s in zip(t_unbind, s_unbind)]
+            return torch.nested.nested_tensor(processed, dtype=target.dtype, device=target.device)
+        else:
+            # Standard execution for Flux / SDXL
+            if getattr(src, 'is_nested', False):
+                src = src.unbind()[0]
+                
+            res = self._process_single(target, src)
+            
+            # Safe Batch Expansion: If we have 1 injected image but are generating a batch of 4, duplicate it.
+            if res.shape[0] != target.shape[0]:
+                if res.shape[0] == 1:
+                    res = res.expand(target.shape[0], -1, -1, -1)
+                else:
+                    raise ValueError(
+                        f"[Davcha Latent Noise] Batch size mismatch. Latent has {res.shape[0]} frames, "
+                        f"but generation requires {target.shape[0]}."
+                    )
+                    
+            return res

@@ -2,7 +2,7 @@ import torch
 
 from comfy_api.latest import io
 from comfy.samplers import KSAMPLER
-from .noise import SpectralNoise, SpectralNoiseEQ, MaskedNoise
+from .noise import *
 from .sampler import sampler_function
 
 # ------------------------------------------------------------
@@ -90,6 +90,7 @@ class DavchaMaskedNoise(io.ComfyNode):
                 io.Noise.Input("base_noise", tooltip="Noise used where the mask is BLACK (0.0)"),
                 io.Noise.Input("masked_noise", tooltip="Noise used where the mask is WHITE (1.0)"),
                 io.Mask.Input("mask", tooltip="Spatial Mask tensor"),
+                io.Boolean.Input("normalize", default=True, tooltip="Normalize the output noise to have a standard deviation of 1.0. This is recommended for most use cases."),
             ],
             outputs=[
                 io.Noise.Output(),
@@ -97,8 +98,8 @@ class DavchaMaskedNoise(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, base_noise, masked_noise, mask) -> io.NodeOutput:
-        blended_noise = MaskedNoise(base_noise, masked_noise, mask)
+    def execute(cls, base_noise, masked_noise, mask, normalize) -> io.NodeOutput:
+        blended_noise = MaskedNoise(base_noise, masked_noise, mask, normalize)
         return io.NodeOutput(blended_noise)
 
 # ------------------------------------------------------------
@@ -126,3 +127,55 @@ class DavchaScheduledSampler(io.ComfyNode):
         samplers = [v for k, v in sorted(autogrow.items())]
         
         return io.NodeOutput(KSAMPLER(sampler_function, extra_options={'samplers': samplers, 'splits': splits_list}))
+
+class DavchaLatentNoise(io.ComfyNode):
+    """
+    Converts an encoded image latent (or raw image) into a Noise object.
+    Perfect for injecting structured data into a Masked Noise Blend for seamless inpainting.
+    Requires the input to perfectly match the generation dimensions.
+    """
+    
+    @classmethod
+    def define_schema(cls):
+        return io.Schema(
+            node_id="DavchaLatentNoise",
+            display_name="Latent Noise Generator",
+            category="davcha/noise",
+            inputs=[
+                io.MultiType.Input("canvas", types=[io.Latent, io.Image], tooltip="Provide either an encoded LATENT or a pixel IMAGE."),
+                io.Vae.Input("vae", optional=True, tooltip="Required ONLY if providing an IMAGE."),
+            ],
+            outputs=[
+                io.Noise.Output(),
+            ]
+        )
+
+    @classmethod
+    def execute(cls, canvas, vae=None) -> io.NodeOutput:
+        # 1. Determine if we received an IMAGE (tensor) or LATENT (dict)
+        if isinstance(canvas, dict) and "samples" in canvas:
+            latent = canvas
+            
+        elif isinstance(canvas, torch.Tensor):
+            # It's an IMAGE, so we must encode it on the fly.
+            if vae is None:
+                raise ValueError(
+                    "\n[Davcha Latent Noise] Missing VAE!\n"
+                    "You provided an IMAGE, but no VAE was connected. "
+                    "Please connect a VAE to encode the image into latent space."
+                )
+            
+            # Standard ComfyUI VAE Encode: Expects [B, H, W, C], drops alpha channel if present
+            pixels = canvas[:, :, :, :3]
+            encoded_tensor = vae.encode(pixels)
+            
+            # Wrap it in the standard ComfyUI latent dictionary format
+            latent = {"samples": encoded_tensor}
+            
+        else:
+            raise TypeError(f"[Davcha Latent Noise] Unsupported input type. Expected LATENT dict or IMAGE tensor, got {type(canvas)}")
+            
+        # 2. Pass to the noise generator object
+        latent_noise = LatentNoiseObject(latent)
+        
+        return io.NodeOutput(latent_noise)
