@@ -176,6 +176,6 @@ class DavchaLatentNoise(io.ComfyNode):
             raise TypeError(f"[Davcha Latent Noise] Unsupported input type. Expected LATENT dict or IMAGE tensor, got {type(canvas)}")
             
         # 2. Pass to the noise generator object
-        latent_noise = LatentNoiseObject(latent)
+        latent_noise = LatentNoise(latent)
         
         return io.NodeOutput(latent_noise)

@@ -218,7 +218,7 @@ class MaskedNoise:
             # Standard execution for Flux / SDXL
             return self._process_single_tensor(x, y, self.mask)
 
-class LatentNoiseObject:
+class LatentNoise:
     def __init__(self, latent_dict):
         # Extract the actual tensor from the ComfyUI latent dictionary
         self.latent_tensor = latent_dict["samples"]
