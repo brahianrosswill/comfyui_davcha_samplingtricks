@@ -134,11 +134,12 @@ class SpectralNoiseEQ:
             return self._process_single_tensor(x)
         
 class MaskedNoise:
-    def __init__(self, base_noise, masked_noise, mask, normalize):
+    def __init__(self, base_noise, masked_noise, mask, normalize, linear_blend):
         self.base_noise = base_noise
         self.masked_noise = masked_noise
         self.mask = mask
         self.normalize = normalize
+        self.linear_blend = linear_blend
 
         # Pass through the seed of the base noise for the samplers
         self.seed = getattr(base_noise, "seed", getattr(masked_noise, "seed", 0))
@@ -183,7 +184,10 @@ class MaskedNoise:
         x_f = x.to(torch.float32)
         y_f = y.to(torch.float32)
         
-        blended = (torch.sqrt(1.0 - m) * x_f) + (torch.sqrt(m) * y_f)
+        if self.linear_blend:
+            blended = (1.0 - m) * x_f + m * y_f
+        else:
+            blended = (torch.sqrt(1.0 - m) * x_f) + (torch.sqrt(m) * y_f)
         
         # 5. Global Normalization
         std = blended.std()

@@ -91,6 +91,7 @@ class DavchaMaskedNoise(io.ComfyNode):
                 io.Noise.Input("masked_noise", tooltip="Noise used where the mask is WHITE (1.0)"),
                 io.Mask.Input("mask", tooltip="Spatial Mask tensor"),
                 io.Boolean.Input("normalize", default=True, tooltip="Normalize the output noise to have a standard deviation of 1.0. This is recommended for most use cases."),
+                io.Boolean.Input("linear_blend", default=False, tooltip="If enabled, performs a linear blend between the two noises. If disabled, uses a square root blend for smoother transitions."),
             ],
             outputs=[
                 io.Noise.Output(),
@@ -98,8 +99,8 @@ class DavchaMaskedNoise(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, base_noise, masked_noise, mask, normalize) -> io.NodeOutput:
-        blended_noise = MaskedNoise(base_noise, masked_noise, mask, normalize)
+    def execute(cls, base_noise, masked_noise, mask, normalize, linear_blend) -> io.NodeOutput:
+        blended_noise = MaskedNoise(base_noise, masked_noise, mask, normalize, linear_blend)
         return io.NodeOutput(blended_noise)
 
 # ------------------------------------------------------------
