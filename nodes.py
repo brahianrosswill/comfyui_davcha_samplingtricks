@@ -144,6 +144,7 @@ class DavchaLatentNoise(io.ComfyNode):
             category="davcha/noise",
             inputs=[
                 io.MultiType.Input("canvas", types=[io.Latent, io.Image], tooltip="Provide either an encoded LATENT or a pixel IMAGE."),
+                io.Boolean.Input("normalize", default=True, tooltip="Normalize the output noise to have a standard deviation of 1.0. This is recommended for most use cases."),
                 io.Vae.Input("vae", optional=True, tooltip="Required ONLY if providing an IMAGE."),
             ],
             outputs=[
@@ -152,7 +153,7 @@ class DavchaLatentNoise(io.ComfyNode):
         )
 
     @classmethod
-    def execute(cls, canvas, vae=None) -> io.NodeOutput:
+    def execute(cls, canvas, normalize=True, vae=None) -> io.NodeOutput:
         # 1. Determine if we received an IMAGE (tensor) or LATENT (dict)
         if isinstance(canvas, dict) and "samples" in canvas:
             latent = canvas
@@ -177,6 +178,6 @@ class DavchaLatentNoise(io.ComfyNode):
             raise TypeError(f"[Davcha Latent Noise] Unsupported input type. Expected LATENT dict or IMAGE tensor, got {type(canvas)}")
             
         # 2. Pass to the noise generator object
-        latent_noise = LatentNoise(latent)
+        latent_noise = LatentNoise(latent, normalize=normalize)
         
         return io.NodeOutput(latent_noise)

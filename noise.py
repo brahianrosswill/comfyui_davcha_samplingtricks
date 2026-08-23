@@ -223,9 +223,10 @@ class MaskedNoise:
             return self._process_single_tensor(x, y, self.mask)
 
 class LatentNoise:
-    def __init__(self, latent_dict):
+    def __init__(self, latent_dict, normalize):
         # Extract the actual tensor from the ComfyUI latent dictionary
         self.latent_tensor = latent_dict["samples"]
+        self.normalize = normalize
         self.seed = 0
 
     def _process_single(self, target, src):
@@ -242,7 +243,13 @@ class LatentNoise:
                 f"but the generation target is {tW*8}x{tH*8} (Latent {tW}x{tH}).\n"
                 f"Fix: Please pad/crop the source image in pixel space BEFORE generating the noise so it exactly matches your generation size."
             )
-            
+        
+        if self.normalize:
+            std = src.std()
+            if std > 0:
+                src = (src - src.mean()) / std
+            else:
+                src = src - src.mean()
         return src
 
     def generate_noise(self, input_latent):
